@@ -1,0 +1,199 @@
+# Get Pocket
+
+```elixir
+Mix.install([
+  {:certifi, "~> 2.6.1"},
+  {:httpoison, "~> 1.8.0"},
+  {:idna, "~> 6.1.1"},
+  {:mochiweb, "~> 2.20.1"},
+  {:parse_trans, "~> 3.3.1"},
+  {:ssl_verify_fun, "~> 1.1.6"},
+  {:unicode_util_compat, "~> 0.7.0"},
+  {:floki, "~> 0.20.4"},
+  {:html_entities, "~> 0.4.0"},
+  {:metrics, "~> 1.0.1"},
+  {:mimerl, "~> 1.2.0"},
+  {:poison, "~> 3.1.0"},
+  {:smart_cell_command, github: "kentaro/smart_cell_command"}
+])
+```
+
+## Section
+
+```elixir
+defmodule FirstStep do
+  def get_code() do
+    url = "https://getpocket.com/v3/oauth/request"
+
+    # ====== Headers ======
+    headers = [
+      {"Host", "getpocket.com"},
+      {"Content-Type", "application/json; charset=UTF-8"},
+      {"X-Accept", "application/json"}
+    ]
+
+    # ====== Query Params ======
+    params = []
+    consumer_key = System.fetch_env!("LB_POCKET_MAC_CONSUMER_KEY")
+    app_name = System.fetch_env!("LB_BOLSILLO_APP_NAME")
+
+    # ====== Body ======
+    body = ~s"""
+    {
+    "redirect_uri": "#{app_name}:authorizationFinished",
+    "consumer_key": "#{consumer_key}"
+    }
+    """
+
+    HTTPoison.start()
+
+    case HTTPoison.post(url, body, headers, params: params) do
+      {:ok, response = %HTTPoison.Response{status_code: status_code, body: body}} ->
+        IO.puts("Response Status Code: #{status_code}")
+        IO.puts("Response Body: #{body}")
+
+        response
+
+      {:error, error = %HTTPoison.Error{reason: reason}} ->
+        IO.puts("Request failed: #{reason}")
+
+        error
+    end
+  end
+end
+```
+
+```elixir
+result =
+  FirstStep.get_code()
+  |> Map.get(:body)
+  |> Poison.decode!()
+
+code = result["code"]
+redirect_url = System.fetch_env!("LB_BOLSILLO_REDIRECT_URL")
+
+redirect_to =
+  URI.new!(
+    "https://getpocket.com/auth/authorize?request_token=#{code}&redirect_uri=#{redirect_url}"
+  )
+  |> URI.to_string()
+```
+
+```elixir
+## Step 1.1
+
+# Uncomment the following block to open this URL in the browser
+# Authorize your account, and reuse the above code
+
+# "open #{redirect_to}"
+# |> String.split("\n")
+# |> Enum.map(fn line ->
+#   [cmd | args] = line |> String.split(" ")
+#   {result, _} = System.cmd(cmd, args)
+#   result |> String.trim()
+# end)
+# |> Enum.join("\n\n")
+# |> IO.puts()
+
+code
+```
+
+```elixir
+defmodule SecondStep do
+  def authorize_code(code) do
+    url = "https://getpocket.com/v3/oauth/authorize"
+
+    # ====== Headers ======
+    headers = [
+      {"Host", "getpocket.com"},
+      {"Content-Type", "application/json; charset=UTF-8"},
+      {"X-Accept", "application/json"}
+    ]
+
+    # ====== Query Params ======
+    params = []
+    consumer_key = System.fetch_env!("LB_POCKET_MAC_CONSUMER_KEY")
+
+    # ====== Body ======
+    body = ~s"""
+    {
+    "code": "#{code}",
+    "consumer_key": "#{consumer_key}"
+    }
+    """
+
+    HTTPoison.start()
+
+    case HTTPoison.post(url, body, headers, params: params) do
+      {:ok, response = %HTTPoison.Response{status_code: status_code, body: body}} ->
+        IO.puts("Response Status Code: #{status_code}")
+        IO.puts("Response Body: #{body}")
+
+        response
+
+      {:error, error = %HTTPoison.Error{reason: reason}} ->
+        IO.puts("Request failed: #{reason}")
+
+        error
+    end
+  end
+end
+```
+
+```elixir
+# If you have authorized correctly the user in the browser in this step:
+# ## Step 1.1
+# Then you should be able to use this code here :)
+SecondStep.authorize_code(code)
+```
+
+```elixir
+defmodule ThirdStep do
+  def fetch_data(count \\ "10", detailType \\ "complete") do
+    url = "https://getpocket.com/v3/get"
+
+    # ====== Headers ======
+    headers = [
+      {"Content-Type", "application/json; charset=UTF-8"}
+    ]
+
+    # ====== Query Params ======
+    params = []
+    # Since it's using Oauth and redirects I can pick those up from the browser lol
+    consumer_key = System.fetch_env!("LB_POCKET_MAC_CONSUMER_KEY")
+    access_token = System.fetch_env!("LB_BOLSILLO_ACCESS_TOKEN")
+
+    # ====== Body ======
+    body = ~s"""
+    {
+      "consumer_key":"#{consumer_key}",
+      "access_token":"#{access_token}",
+      "count":"#{count}",
+      "detailType":"#{detailType}"
+    }
+    """
+
+    HTTPoison.start()
+
+    case HTTPoison.post(url, body, headers, params: params) do
+      {:ok, response = %HTTPoison.Response{status_code: status_code, body: body}} ->
+        IO.puts("Response Status Code: #{status_code}")
+        IO.puts("Response Body: #{body}")
+
+        response
+
+      {:error, error = %HTTPoison.Error{reason: reason}} ->
+        IO.puts("Request failed: #{reason}")
+
+        error
+    end
+  end
+end
+```
+
+```elixir
+ThirdStep.fetch_data("30", "simple")
+|> Map.get(:body)
+|> Poison.decode!()
+```
+
